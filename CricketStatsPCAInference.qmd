@@ -1,0 +1,547 @@
+---
+title: "Cricket Stats PCA and Inference"
+author: "Jason Abi Chebli"
+date: "2025-03-17"
+quarto-required: ">=1.3.0"
+format:
+    html:
+        output-file: CricketStatsPCAInference.html
+        css: "assignment.css"
+        embed-resources: true
+---
+
+```{r load-packages, include = FALSE}
+# Load all the necessary packages for this assignment
+library(readr)
+library(tidyr)
+library(yardstick)
+library(mulgar)
+library(GGally)
+library(tourr)
+library(uwot)
+library(dplyr)
+library(plotly)
+library(tidyverse)
+library(ggfortify)
+library(knitr)
+library(boot)
+library(infer)
+
+```
+
+
+#### Dimension reduction
+```{r question-4, include= FALSE}
+# Read the data in
+engwt20 <- read_csv("../engwt20.csv")
+```
+
+[Examine the data and identify which variables should be included in the PCA analysis]{.underline}
+```{r question-4i, include= FALSE}
+# ------------------------------ Examine/Identify ------------------------------ 
+# Examine the data 
+glimpse(engwt20)
+head(engwt20)
+
+
+# Identify which variables should be included in the PCA analysis 
+
+# Include all numerical features. As such exclude non-numerical and categorical variables including Player Name, Country, Start year and End Year of career, whether they were out on their highest score. 
+engwt20_pca <- engwt20 |>
+  select(-c(Player, Country, Start, End, HighScoreNotOut))
+
+#Examine the new data
+glimpse(engwt20_pca)
+
+```
+Variables that should be included in the PCA analysis need to be numerical and should not be non-numerical or categorical in nature. Keeping this in mind, after examining the dataset`engwt20.csv` dataset, it is best to remove the following 5 variables:
+
+- `Player`: A non-numerical variable
+- `Country`: A non-numerical variable
+- `Start` and `End`: A non-numerical variable (although years are technically 'numbers', they are actually date variables which should be removed)
+- `HighScoreNotOut`: A categorical variable
+
+Consequently, removing these variables, the following 19 variables should be included in the PCA analysis:
+`Matches`, `InningsBowled`, `Overs`, `Maidens`, `RunsConceeded`, `Wickets`, `BowlingAverage`, `Economy`, `BowlingStrikeRate`, `FourWickets`, `FiveWickets`, `InningsBatted`, `NotOuts`, `RunsScored`, `HighScore`, `BattingAverage`, `Hundreds`, `Fifties`, and `Ducks`.
+
+
+[Apply and summarise the PCA]{.underline}
+
+After applying the PCA (ensuing it is properly scaled and centered), 19 principal components were determined. A summary of the first 12 principle components can be found below:
+```{r question-4ii, echo = FALSE}
+# Alternatively, apply the PCA
+engwt20_pca_result <- prcomp(engwt20_pca, center=TRUE, scale=TRUE) # Conduct PCA
+
+# Summarise the PCA
+engwt20_pca_smry <- tibble(evl=engwt20_pca_result$sdev^2) |>
+  mutate(p = evl/sum(evl), 
+         cum_p = cumsum(evl/sum(evl))) |> 
+  t() |>
+  as.data.frame()
+colnames(engwt20_pca_smry) <- colnames(engwt20_pca_result$rotation)
+engwt20_pca_smry <- bind_rows(as.data.frame(engwt20_pca_result$rotation),
+                            engwt20_pca_smry)
+rownames(engwt20_pca_smry) <- c(rownames(engwt20_pca_result$rotation),
+                              "Variance", "Proportion", 
+                              "Cum. prop")
+options(digits=3)
+kable(engwt20_pca_smry[,1:12])
+```
+
+From the summary, a few quick comments about the first three principal components that can be seen from the summary:
+
+*PC1:*
+
+  - Has the largest variance, explaining 43.4% of the total variance
+  - `Matches`, `NotOuts`, `InningsBatted`, `InningsBowled`, `RunsConceeded`, `Overs`, `RunsScored`, `Wickets` and `Ducks` are highly negatively correlated  with PC1 in that order. Consequently, as these relate to bowling and batting, this suggests that PC1 may represent overall batting and bowling performance - with more matches resulting in greater participation in all these factors.
+  
+*PC2:*
+
+  - Explains 24.8% of the total varaince 
+  - `Wickets`, `RunsConceeded`, `Overs`, `Maidens`, `InningsBowled` and `Economy` are all strongly positively correlated with PC2 in that order. Consequently, as these all relating to bowling only, they suggest that PC2 may represent bowling performance.
+  
+*PC3:*
+
+  - Explains 11.4% of the total variance 
+  - `BowlingAverage`, `BowlingStrikeRate`and `Economy` are all very negatively correlation with PC3 in that order. Consequently, as these all relate to how good/consistent a bowler is, it suggests that PC3 may represent bowler performance. 
+
+
+[Produce a Biplot of the first two PCs, and explain the structure and variable contributions (4pts)]{.underline}
+
+A Biplot of the first two PCs can be seen below.
+
+::: {.center-div}
+[PCA Biplot of England Women's T20 Stats]{.figure-title}
+```{r question-4iii, echo= FALSE}
+# ----------------------------------- Biplot ----------------------------------- 
+
+# Produce a Biplot of the first two PCs
+engwt20_pca_result |> autoplot(loadings = TRUE, loadings.label = TRUE) 
+#+ ggtitle("PCA Biplot of England Women's T20 Stats")
+
+# Exlpain the structure and variable contributions
+
+```
+:::
+
+Arrows that point in a similar direction indicate a high correlation. As can be seen, there seem to be four distinct clusters of arrows:  
+
+1. `RunsConceded`, `InningsBowled`, `Maidens`, `Overs`, `Wickets`, `FourWickets`, and `FiveWickets` all narrowly cluster and point to the top-left quadrant. This indicates that they are all strongly positively correlated with each other and are largely defined by the negative side of PC1 and the positive side of PC2. These are all core bowling volume metrics, meaning they measure the extent of a player's bowling workload rather than efficiency. Their strong correlation makes sense, as bowlers who bowl more overs will naturally take more wickets and concede more runs.  
+
+2. `Economy`, `BowlingAverage`, and `BowlingStrikeRate` all point nearly perfectly vertically. This suggests that they are strongly positively correlated with each other and are defined by small negative PC1 values and positive PC2 values. These are all bowling quality metrics, assessing how effective a bowler is rather than how much they bowl. Their placement confirms that they are distinct from raw volume metrics, instead differentiating bowlers based on their efficiency.  
+
+3. `Ducks`, `InningsBatted`, `RunsScored`, `HighScore`, `BattingAverage`, `Hundreds`, and `Fifties` all point roughly in the same general direction (bottom-left quadrant). This suggests that they are positively correlated with each other and are largely defined by the negative side of PC1 and the negative side of PC2. These are all core batting metrics, meaning they capture overall batting performance and volume. Their correlation is expected since players who bat more frequently will likely accumulate more runs and higher individual scores.  
+
+4. `Matches` and `NotOuts` appear pointing slightly under horizontal (left quadrant). They have strong negative PC1 values and low PC2 values. This suggests that they are associated with overall experience or playing time without strongly differentiating between batting and bowling.  
+
+The positioning of the two bowling arrow clusters makes sense. Although they point in different directions, they must still be correlated because both groups of metrics pertain to bowling. The first cluster represents workload and opportunity, whereas the second cluster captures effectiveness.  
+
+Overall, any arrows pointing left seem to be influenced by experience or time spent on the cricket field. In contrast, rate-based metrics that account for experience tend to point upwards. Players positioned higher on the y-axis (PC2) are more bowling-focused, whereas those lower on the y-axis are more batting-focused.  
+
+Additionally, while the points in the biplot are scattered, there appears to be a subtle upward trend. This suggests that players with greater overall involvement (strong negative PC1 values) also tend to be more bowling-oriented (higher PC2 values), revealing a meaningful pattern in the data rather than pure randomness.  
+
+
+[Determine an appropriate number of PCs to use and justify this using the proportion of total variance and a scree plot. (2pts)]{.underline}
+
+The proportion of total variance can be seen in the summary below:
+```{r question-4iv-i, echo= FALSE}
+# Calculate the proportion of total variance
+kable(summary(engwt20_pca_result)$importance)
+```
+A general rule of thumb for selecting the number of principal components is to choose a number that results in a cumulative proportion of at least 80%. From the Proportion of Variance table, we see that the cumulative proportion only exceeds 80% after four principal components, reaching 84.3% to be precise.
+
+This indicates that four principal components can explain 84.3% of the total variance. Another reason why four principal components may be a good choice is that after this point, the proportion of variance explained starts to plateau and decrease significantly, suggesting that additional components may not provide much more valuable insight.
+
+A scree plot can also be useful in confirming the appropriate number of principal components. A scree plot is shown below:
+
+::: {.center-div}
+[Scree Plot of England Women's T20 Stats]{.figure-title}
+```{r question-4iv-ii, echo= FALSE}
+# Generate a Scree Plot
+  ggscree(engwt20_pca_result, q=8) + labs(x = "Principal Component Number")
+  # +   ggtitle("Scree Plot of England Women's T20 Stats")
+```
+:::
+
+From the scree plot, we observe that the 'elbow' point occurs at PC = 4. This suggests that four principal components are the most suitable choice.
+
+Therefore, based on both the proportion of total variance and the scree plot, we conclude that four principal components are the most appropriate for capturing a substantial proportion of the variation.
+
+
+[Interpret the PCs, including notes about particular players.]{.underline}
+```{r question-4v, include= FALSE}
+# ------------------------------- Intrepret PCs -------------------------------- 
+
+# Interpret the PCs
+print(engwt20_pca_result$rotation[,1:4])
+
+# Notes about particular players.
+engwt20_pca_scores <- as_tibble(engwt20_pca_result$x) |> 
+  mutate(Player = engwt20$Player) |>
+  select(PC1, PC2, PC3, PC4, Player)
+
+# View the first few player positions in PCA space
+head(engwt20_pca_scores)
+
+```
+
+*First Principal Component:*
+
+As mentioned earlier, all variable loadings are negative on PC1, with the strongest negative loadings found in `Matches`, `NotOuts`, `InningsBatted`, `InningsBowled`, `RunsConceeded`, `Overs`, `RunsScored`, `Wickets` and `Ducks`. Given their strong correlation, PC1 likely represents overall performance across both batting and bowling, favoring experienced all-rounders. The player with the largest negative PC1 score is DN Wyatt (Danni Wyatt-Hodge), indicating that DN Wyatt is the best-experienced all-rounder.
+
+*Second Principal Component:*
+
+The strongest positive loadings on PC2 include `Wickets`, `RunsConceeded`, `Overs`, `Maidens`, `InningsBowled` and `Economy`. Given their strong positive correlation and the fact that they all relate exclusively to bowling, PC2 likely represents bowling volume performance, favoring experienced and high-performing bowlers. The player with the largest positive PC2 score is A Shrubsole (Anya Shrubsole), indicating that A Shrubsole is the best-experienced bowler.
+
+
+*Third Principal Component:*
+
+The strongest negative loading on PC3 include `BowlingAverage`, `BowlingStrikeRate`and `Economy`. Given the strong negative correlation they have and the fact that these metrics all relate to how good/consistent a bowler is, it suggests that PC3 may represent bowling quality performance, favouring players who have exceptional bowling scores, regardless of their experience/number of years playing. In other words, it considers how skillful the bowler is. The player with the largest positive PC3 score is A Shrubsole (Anya Shrubsole), indicating that A Shrubsole is the best quality performance  bowler. (Note we take the largest positive PC3 as the best player has the lowest bowling average, strike rate and economy).
+
+*Fourth Principal Component:*
+
+The strongest positive loadings on PC4 include `FiveWickets`, `Hundreds`, `Ducks`, `FourWickets`, and `Economy`. Given their strong positive correlation and the fact that they represent extraordinary achievements in both batting (`Hundreds`) and bowling (`FiveWickets`, `Ducks`, `FourWickets`), PC4 likely represents outstanding individual performances, favoring players who have reached major milestones and made significant match contributions. The player with the largest positive PC4 score is JL Gunn (Jenny Gunn), followed by DN Wyatt and A Shrubsole, indicating that JL Gunn was a legendary cricketer who consistently outperformed.
+
+
+[Suggest ways that this analysis could be improved (2pts)]{.underline}
+
+This analysis could be further improved by:
+
+- Including more contextual information such as match weather, venue, opposition team, etc.
+
+- Segmenting the data. The dataset contains players whose careers ended in 2004 and players whose careers ended in 2025. This wide time horizon may lead to faulty conclusions when comparing players from different eras. Players from similar time periods should be compared, rather than players whose careers span 21 years apart. This is especially important because technology, sports, and fitness have evolved significantly over this time.
+
+- Similarly, analysing a player's performance at different stages of their career could provide useful and insightful information.
+
+- Outliers were never checked or accounted for. This should be addressed in future analyses.
+
+#### Bootstrapping and permuting your way to provide evidence
+
+##### a) Apply PCA exclude variables Player, Country, Start, End, HighScoreNotOut, Matches, InningsBowled, Overs, InningsBatted, FiveWickets and Hundreds
+
+```{r question-1a, include = FALSE}
+# Read the data in
+engwt20 <- read_csv("engwt20.csv")
+
+# Exclude variables
+engwt20_tidy <- engwt20 |> select(-Player,-Country, -Start, -End, -HighScoreNotOut, -Matches, -InningsBowled, -Overs, -InningsBatted, -FiveWickets, -Hundreds)
+
+# Apply PCA to the new data set
+engwt20_pca_result <- prcomp(engwt20_tidy, center=TRUE, scale=TRUE)
+
+# Output a summary of the PCA results on the new data
+engwt20_pca_smry <- tibble(evl=engwt20_pca_result$sdev^2) |>
+  mutate(p = evl/sum(evl), 
+         cum_p = cumsum(evl/sum(evl))) |> 
+  t() |>
+  as.data.frame()
+colnames(engwt20_pca_smry) <- colnames(engwt20_pca_result$rotation)
+engwt20_pca_smry <- bind_rows(as.data.frame(engwt20_pca_result$rotation),
+                            engwt20_pca_smry)
+rownames(engwt20_pca_smry) <- c(rownames(engwt20_pca_result$rotation),
+                              "Variance", "Proportion", 
+                              "Cum. prop")
+
+
+# --------------------------------- FUNCTIONS ---------------------------------
+
+# Compute PC1 Function
+compute_PC1 <- function(data, index) {   
+   pc1 <- prcomp(data[index,], center=TRUE, scale=TRUE)$rotation[,1]
+  if (sign(pc1[1]) < 0) 
+    pc1 <- -pc1 
+  return(pc1)
+}
+
+# Compute PC2 Function
+compute_PC2 <- function(data, index) {   
+   pc2 <- prcomp(data[index,], center=TRUE, scale=TRUE)$rotation[,2]
+  # Coordinate signs: make m100 always positive
+  if (sign(pc2[1]) < 0) 
+    pc2 <- -pc2 
+  return(pc2)
+}
+
+# --------------------------------- ANALYSIS -----------------------------------
+# Set the seed
+set.seed(31444059)
+
+# PC1 Analysis
+PC1_boot <- boot(data=engwt20_tidy, compute_PC1, R=1000)
+colnames(PC1_boot$t) <- colnames(engwt20_tidy)
+PC1_boot_ci <- as_tibble(PC1_boot$t) |>
+  gather(var, coef) |>
+  mutate(var = factor(var, levels=c("Maidens", "RunsConceeded", "Wickets", "BowlingAverage", "Economy", "BowlingStrikeRate", "FourWickets", "NotOuts", "RunsScored", "HighScore", "BattingAverage", "Fifties", "Ducks"))) %>%
+  group_by(var) |>
+  summarise(q2.5 = quantile(coef, 0.025), 
+            q5 = median(coef),
+            q97.5 = quantile(coef, 0.975)) |>
+  mutate(t0 = PC1_boot$t0) 
+pb_1 <- ggplot(PC1_boot_ci, aes(x=var, y=t0)) + 
+  geom_hline(yintercept=0, linetype=2, colour="red") +
+  geom_point() +
+  geom_errorbar(aes(ymin=q2.5, ymax=q97.5), width=0.1) +
+  xlab("Variables") + ylab("Coefficient") + theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+# PC2 Analysis
+PC2_boot <- boot(data=engwt20_tidy, compute_PC2, R=1000)
+colnames(PC2_boot$t) <- colnames(engwt20_tidy)
+PC2_boot_ci <- as_tibble(PC2_boot$t) |>
+  gather(var, coef) |>
+  mutate(var = factor(var, levels=c("Maidens", "RunsConceeded", "Wickets", "BowlingAverage", "Economy", "BowlingStrikeRate", "FourWickets", "NotOuts", "RunsScored", "HighScore", "BattingAverage", "Fifties", "Ducks"))) %>%
+  group_by(var) |>
+  summarise(q2.5 = quantile(coef, 0.025), 
+            q5 = median(coef),
+            q97.5 = quantile(coef, 0.975)) |>
+  mutate(t0 = PC2_boot$t0) 
+pb_2 <- ggplot(PC2_boot_ci, aes(x=var, y=t0)) + 
+  geom_hline(yintercept=0, linetype=2, colour="red") +
+  geom_point() +
+  geom_errorbar(aes(ymin=q2.5, ymax=q97.5), width=0.1) +
+  xlab("Variables") + ylab("Coefficient") + theme(axis.text.x = element_text(angle = 40, hjust = 1)) # + labs(title = "Figure 2: Bootstrap Confidence Intervals for PC2 Loadings") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+In this analysis, I performed Principal Component Analysis (PCA) on the
+women's cricket data set, focusing on the performance metrics while
+excluding player-specific details and some match-related variables (11
+variables were removed, including `Player`, `Country`, `Start`, `End`,
+`HighScoreNotOut`, `Matches`, `InningsBowled`, `Overs`, `InningsBatted`,
+`FiveWickets` and `Hundreds`). The data was standardised in the PCA that
+was applied to the cleaned data, and a summary of the results was
+generated and can be seen in Table 1, which included the variance,
+proportion of variance, and cumulative proportion for each principal
+component.
+
+::: {.center-div}
+
+[Table 1: Principal Component Analysis on Women's Cricket]{.figure-title}
+```{r question1-a-i, echo = FALSE}
+options(digits=3)
+kable(engwt20_pca_smry)#, caption = "Table 1: Principal Component Analysis on Women's Cricket")
+```
+:::
+
+As can be seen from Table 1, after three Principal Components,
+approximately 81.8% of the total variance is explained. PC1's most
+significant variables included `NotOuts`, `RunsScored`, `HighScore`,
+`Ducks`, and `BattingAverage`. PC2's most significant variables included
+`Economy`, `RunsConceeded` and `Wickets`. PC3's most significant
+variables included `BowlingAverage` and `BowlingStrikeRate`. As such, we
+can see from Table 1 that PC1 focuses mainly on batting performance, PC2
+focuses mainly on bowling performance and PC3 focuses mainly on bowling
+effectiveness.
+
+However, this analysis is only done from one PCA. As such, I then used
+bootstrap to determine which statistics primarily contribute to PC1, and
+to PC2. To assess the robustness of the PCA loadings, I employed a
+bootstrap method, generating 1,000 resamples to compute 95% confidence
+intervals for the coefficients contributing to the first two principal
+components (PC1 and PC2). These intervals are visualised through error
+bar plots seen in Figure 1 and Figure 2 for PC1 and PC2 respectively,
+providing insights into the statistical significance of the various
+performance metrics in explaining the variation captured by each
+principal component.
+
+::: columns
+::: column
+
+[Figure 1: Bootstrap Confidence Intervals for PC1 Loadings]{.figure-title}
+```{r question1-a-ii, echo = FALSE}
+pb_1
+```
+:::
+
+::: column
+
+[Figure 2: Bootstrap Confidence Intervals for PC2 Loadings]{.figure-title}
+```{r question1-a-iiI, echo = FALSE}
+pb_2
+```
+:::
+:::
+
+As can be seen from Figure 1, the variables `Maidens`, `RunsConceeded`,
+`Wickets`, `FourWickets` have positive coefficients with 95% bootstrap
+confidence intervals that do not cross zero, indicating that these
+variables significantly and consistently contribute to PC1. Among them,
+`RunsConceeded` exhibits the highest coefficient, suggesting a
+particularly strong influence. In contrast, variables such as `NotOuts`,
+`RunsScored`, `HighScore`display even higher point estimates, but their
+wide confidence intervals include zero, indicating greater variability
+and a lack of statistical significance in their contribution to PC1.
+Taken together, this suggests that PC1 is primarily driven by bowling
+performance, as the most influential and stable contributors are
+bowling-related metrics.
+
+In Figure 2, the variables `Maidens`, `RunsConceeded`, `Wickets`,
+`BowlingAverage`, `Economy`, `BowlingStrikeRate`, and `FourWickets` all
+have positive loadings with confidence intervals that do not cross zero,
+reinforcing their statistical significance and robustness. Since all
+these metrics pertain to bowling, it is evident that PC2 is also
+strongly associated with bowling performance.
+
+##### b) Use bootstrap to determine which statistics primarily contribute to PC1, and to PC2.
+
+```{r question-1b, echo = FALSE}
+# Use permutation to determine whether there is positive correlation between RunsScored and HighScore.
+
+# Calculate the permutation correlation
+engwt20_perm1 <- engwt20_tidy |>
+  select(RunsScored, HighScore) |>
+  specify(RunsScored ~ HighScore) |>
+  hypothesize(null = "independence") |>
+  generate(reps = 1000, type = "permute") |>
+  calculate("correlation") 
+
+# Calculate the true correlation
+dp_true1 <- cor(engwt20_tidy$RunsScored, engwt20_tidy$HighScore) 
+
+# Visualise the output
+perm1_plot <- ggplot(engwt20_perm1, aes(x=stat)) +
+  geom_histogram(binwidth = 0.1, colour="white") +
+  geom_vline(xintercept=dp_true1, colour="red") # + labs(title = "Figure 3: Permutation Distribution of Correlation \nBetween Runs Scored and High Score") + theme(plot.title = element_text(hjust = 0.5))
+
+
+# Use permutation to determine whether there is positive correlation between between RunsScored and RunsConceeded.
+
+# Calculate the permutation correlation
+engwt20_perm2 <- engwt20_tidy |>
+  select(RunsScored, RunsConceeded) |>
+  specify(RunsScored ~ RunsConceeded) |>
+  hypothesize(null = "independence") |>
+  generate(reps = 1000, type = "permute") |>
+  calculate("correlation") 
+
+# Calculate the true correlation
+dp_true2 <- cor(engwt20_tidy$RunsScored, engwt20_tidy$RunsConceeded) 
+
+# Visualise the output
+perm2_plot <- ggplot(engwt20_perm2, aes(x=stat)) +
+  geom_histogram(binwidth = 0.1, colour="white") +
+  geom_vline(xintercept=dp_true2, colour="red") #+ labs(title = "Figure 4: Permutation Distribution of Correlation \nBetween Runs Scored and Runs Conceeded") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+In this analysis, I used permutation testing to assess the correlation
+between two pairs of cricket performance metrics: `RunsScored` vs.
+`HighScore`, and `RunsScored` vs. `RunsConceeded`. For each pair, I
+first calculated the observed correlation between the variables. Then, I
+generated 1,000 permutations of the data under the null hypothesis of
+independence, calculating the correlation for each permutation. The
+distribution of these permuted correlations was visualised in Figure 3
+and Figure 4 respectively using histograms, with vertical red lines
+indicating the true correlation observed in the data. This approach
+allowed for testing whether the observed correlations were statistically
+significant or if they could have occurred by random chance, providing a
+more robust analysis of the relationships between these performance
+metrics.
+
+[Runs Scored vs. High Score Correlation]{.underline}
+
+Figure 3 illustrates the permutation distribution of correlation between
+`RunsScored` and `HighScore`.
+
+::: {.center-div}
+
+[Figure 3: Permutation Distribution of Correlation \n Between Runs Scored and High Score]{.figure-title}
+```{r question-1b-i, echo = FALSE}
+perm1_plot
+```
+:::
+
+The red line in Figure 3 illustrates the true correlation between
+`RunsScored` and `HighScore`, with it being `r round(dp_true1,4)*100`%.
+As the red line falls far outside the range of the permuted
+correlations, it suggests that the true correlation is significantly
+different from what you would expect under the null hypothesis. This
+would indicate evidence of a significant correlation between the two
+variables. Therefore, we can conclude that `RunsScored` and `HighScore`
+are strongly correlated. Given that the red line (true correlation) lies
+well to the right of zero, we conclude that `RunsScored` and `HighScore`
+are significantly and positively correlated.
+
+[Runs Scored vs. Runs Conceeded Correlation]{.underline}
+
+Figure 4 illustrates the permutation distribution of correlation between
+`RunsScored` and `RunsConceeded`.
+
+::: {.center-div}
+
+[Figure 4: Permutation Distribution of Correlation \n Between Runs Scored and Runs Conceeded]{.figure-title}
+```{r question-1b-ii, echo = FALSE}
+perm2_plot
+```
+:::
+
+The red line in Figure 4 illustrates the true correlation between
+`RunsScored` and `RunsConceeded`, with it being
+`r round(dp_true2,4)*100`%. Although the red line falls to the right of
+0, indicating the possibility of there being a positive correlation, the
+red line does fall within the distribution of permuted correlations.
+Therefore, we conclude that the true correlation is not significantly
+different from what would be expected by chance (under the null
+hypothesis), implying no significant correlation between the two
+variables. Therefore, we can conclude that `RunsScored` and
+`RunsConceeded` are not positively correlated.
+
+
+## References
+
+Arnold, J. B. (2012). ggthemes: Extra Themes, Scales and Geoms for 'ggplot2'. R package version 5.1.0.
+Available at: https://CRAN.R-project.org/package=ggthemes
+
+Canty, A., & Ripley, B. D. (2021). boot: Bootstrap R (S-Plus) Functions.
+Available at: https://CRAN.R-project.org/package=boot
+
+Chen, T., He, T., Benesty, M., Khotilovich, V., Tang, Y., Cho, H., ... & Yuan, J. (2025). xgboost: Extreme Gradient Boosting. R package version 3.0.0.1.
+Available at: https://github.com/dmlc/xgboost
+
+Cheng, J., Xie, Y., Wickham, H., Chang, W., & McPherson, J. (2023). crosstalk: Inter-Widget Interactivity for HTML Widgets.
+Available at: https://CRAN.R-project.org/package=crosstalk
+
+Garnier, S., Ross, N., Rudis, B., Sciaini, M., Camargo, A. P., & Scherer, C. (2023). viridisLite: Colorblind-Friendly Color Maps (Lite Version). R package version 0.4.2.
+Available at: https://CRAN.R-project.org/package=viridisLite
+
+Hart, C., & Wang, E. (2022). detourr: Portable and Performant Tour Animations.
+Available at: https://CRAN.R-project.org/package=detourr
+
+Hvitfeldt, E., Silge, J., Kuhn, M., & Vaughan, D. (2023). discrim: Model Wrappers for Discriminant Analysis.
+Available at: https://CRAN.R-project.org/package=discrim
+
+Kassambara, A. (2023). ggpubr: 'ggplot2' Based Publication Ready Plots. R package version 0.6.0.
+Available at: https://rpkgs.datanovia.com/ggpubr/
+
+Kuhn, M., Wickham, H., & Weston, S. (2020). Tidymodels: A collection of packages for modeling and machine learning using tidyverse principles.
+Available at: https://www.tidymodels.org
+
+Liaw, A., & Wiener, M. (2002). Classification and Regression by randomForest. R News, 2(3), 18–22.
+Available at: https://CRAN.R-project.org/package=randomForest
+
+Milborrow, S. (2024). rpart.plot: Plot 'rpart' Models: An Enhanced Version of 'plot.rpart'. R package version 3.1.2.
+Available at: https://CRAN.R-project.org/package=rpart.plot
+
+Pedersen, T. L. (2025). patchwork: The Composer of Plots. R package version 1.3.0.9000.
+Available at: https://patchwork.data-imaginist.com/
+
+Schloerke, B., Cook, D., Larmarange, J., Briatte, F., Marbach, M., Thoen, E., Elberg, A., & Crowley, J. (2024). GGally: Extension to 'ggplot2'. R package version 2.2.1.
+Available at: https://CRAN.R-project.org/package=GGally
+
+Sievert, C. (2020). Interactive Web-Based Data Visualization with R, plotly, and shiny. Chapman and Hall/CRC.
+Available at: https://plotly-r.com
+
+Wickham, H., Cook, D., Hofmann, H., & Buja, A. (2011). tourr: An R Package for Exploring Multivariate Data with Projections. Journal of Statistical Software, 40(2), 1–18.
+Available at: http://www.jstatsoft.org/v40/i02/
+
+Wickham, H., François, R., Henry, L., & Müller, K. (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686.
+DOI: https://doi.org/10.21105/joss.01686
+
+Wickham, H., Hester, J., & Bryan, J. (2024). readr: Read Rectangular Text Data. R package version 2.1.5.
+Available at: https://readr.tidyverse.org
+
+Xie, Y. (2025). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.50.
+Available at: https://yihui.org/knitr/
+
+Zhu, H. (2024). kableExtra: Construct Complex Table with 'kable' and Pipe Syntax.
+Available at: https://CRAN.R-project.org/package=kableExtra
+
+
+
