@@ -6,7 +6,7 @@ Created by **Jason Abi Chebli**
 <div style="text-align: justify;">This project investigates batting and bowling performance in England Women’s T20 cricket through Principal Component Analysis (PCA), bootstrapping, and permutation testing. Using data from the <code>cricketdata</code> package, the project reduces dimensionality, visualises player clustering and variable contributions, and statistically tests key relationships using resampling-based inference techniques.</div>
 
 ## Demo  
-You can explore the analysis conducted [here](https://jabichebli.github.io/CricketStatsPCAInference/index.html).
+You can explore the analysis conducted [here](https://jabichebli.github.io/CricketStatsPCAInference/report/index.html).
 
 ## Dataset  
 - File: `engwt20.csv`  
@@ -32,7 +32,7 @@ You can explore the analysis conducted [here](https://jabichebli.github.io/Crick
 
 ## Files  
 >[CricketStatsPCAInference.qmd](CricketStatsPCAInference.qmd) — Quarto file containing full analysis, PCA, bootstrap, and permutation testing  
->[index.html](index.html) — Rendered output for easy viewing  
+>[index.html](report/index.html) — Rendered output for easy viewing  
 >[engwt20.csv](engwt20.csv) — Dataset containing England Women’s T20 cricket statistics  
 
 ## Visual Highlights  
